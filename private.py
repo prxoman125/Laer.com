@@ -272,20 +272,16 @@ for idx, m in enumerate(mirrors):
       )
   )
 
-# Ajustes de la gráfica
+# Ajustes de la gráfica optimizados para evitar errores de validación en Plotly
 fig.update_layout(
-    xaxis=dict(
-        title="Eje X (Ancho)",
-        range=[-max_x / 2 - 1, max_x / 2 + 1],
-        zeroline=True,
-    ),
-    yaxis=dict(
-        title="Eje Y (Largo)", range=[-1, max_y + 1], scaleanchor="xaxis"
-    ),
+    xaxis_title="Eje X (Ancho)",
+    xaxis_range=[-max_x / 2 - 1, max_x / 2 + 1],
+    xaxis_zeroline=True,
+    yaxis_title="Eje Y (Largo)",
+    yaxis_range=[-1, max_y + 1],
+    yaxis_scaleanchor="x",
     width=800,
     height=600,
     template="plotly_dark",
     legend=dict(x=0, y=1),
 )
-
-st.plotly_chart(fig, use_container_width=True)
