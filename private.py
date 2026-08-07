@@ -21,14 +21,14 @@ st.sidebar.subheader("Dimensiones del Área")
 max_x = st.sidebar.slider("Límite Eje X (Ancho)", 10.0, 50.0, 20.0, 1.0)
 max_y = st.sidebar.slider("Límite Eje Y (Fondo)", 10.0, 50.0, 20.0, 1.0)
 
-# 2. Configuración del Láser (Solo se mueve en el eje X, ubicado en Y=0)
+# 2. Configuración del Láser
 st.sidebar.subheader("Láser (Origen)")
 laser_x = st.sidebar.slider(
     "Posición X del Láser", -max_x / 2, max_x / 2, 0.0, 0.5
 )
 laser_angle_deg = st.sidebar.slider(
     "Ángulo del Láser (grados)", 0, 180, 90, 1
-)  # 90 apunta al frente
+)
 
 # 3. Configuración del Objetivo
 st.sidebar.subheader("🎯 Objetivo")
@@ -59,7 +59,7 @@ for i in range(num_mirrors):
   mirrors.append({"x": mx, "y": my, "angle": m_ang})
 
 
-# --- MOTOR DE FÍSICA Y REBOTES ---
+# --- MOTOR DE FÍSICA Y REBOTES CORREGIDO ---
 def get_ray_path(
     l_x, l_start_deg, mirrors_list, t_x, t_y, t_rad, b_x, b_y, max_bounces=15
 ):
@@ -77,26 +77,25 @@ def get_ray_path(
   for _ in range(max_bounces):
     closest_t = float("inf")
     next_x, next_y = curr_x + dir_x * 100, curr_y + dir_y * 100
-    hit_mirror_idx = -1
     normal_vector = None
 
     # 1. Colisiones con las paredes perimetrales de la caja
     if dir_x > 0:
       t_wall = (b_x - curr_x) / dir_x
-      if 0 < t_wall < closest_t:
+      if 0.001 < t_wall < closest_t:
         closest_t = t_wall
         next_x, next_y = b_x, curr_y + dir_x * t_wall
         normal_vector = (-1, 0)
     elif dir_x < 0:
       t_wall = (-b_x - curr_x) / dir_x
-      if 0 < t_wall < closest_t:
+      if 0.001 < t_wall < closest_t:
         closest_t = t_wall
         next_x, next_y = -b_x, curr_y + dir_x * t_wall
         normal_vector = (1, 0)
 
     if dir_y > 0:
       t_wall = (b_y - curr_y) / dir_y
-      if 0 < t_wall < closest_t:
+      if 0.001 < t_wall < closest_t:
         closest_t = t_wall
         next_x, next_y = curr_x + dir_x * t_wall, b_y
         normal_vector = (0, -1)
@@ -120,7 +119,6 @@ def get_ray_path(
         if 0.001 < t < closest_t and 0 <= u <= 1:
           closest_t = t
           next_x, next_y = curr_x + dir_x * t, curr_y + dir_y * t
-          hit_mirror_idx = idx
 
           # Cálculo físico exacto de la Normal perpendicular al espejo
           nx, ny = -m_dy, m_dx
@@ -132,7 +130,7 @@ def get_ray_path(
             nx, ny = -nx, -ny
           normal_vector = (nx, ny)
 
-    # 3. Comprobación de intersección con el objetivo
+    # 3. Comprobación de intersección con el objetivo a lo largo del trayecto actual
     v_vec = np.array([next_x - curr_x, next_y - curr_y])
     w_vec = np.array([t_x - curr_x, t_y - curr_y])
     v_len_sq = np.dot(v_vec, v_vec)
@@ -148,8 +146,10 @@ def get_ray_path(
         pb_y = curr_y + b_val * v_vec[1]
         proj_dist = np.hypot(t_x - pb_x, t_y - pb_y)
 
+      # Si el objetivo intercepta el rayo antes de llegar al obstáculo/pared
       if proj_dist <= t_rad:
         hit_target = True
+        # Acortamos el trayecto final hasta el objetivo para mayor precisión visual
         path_x.append(t_x)
         path_y.append(t_y)
         break
@@ -157,7 +157,8 @@ def get_ray_path(
     path_x.append(next_x)
     path_y.append(next_y)
 
-    if hit_target or hit_mirror_idx == -1 or normal_vector is None:
+    # Si en esta iteración no chocó contra nada válido, terminamos la simulación
+    if normal_vector is None:
       break
 
     # Registrar punto de rebote físico
@@ -173,7 +174,7 @@ def get_ray_path(
   return path_x, path_y, hit_target, bounce_points
 
 
-# Ejecutar la simulación
+# Ejecutar la simulación corregida
 path_x, path_y, success, bounces = get_ray_path(
     laser_x,
     laser_angle_deg,
