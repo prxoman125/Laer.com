@@ -2,20 +2,21 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
-# Configuración de la página
+# Configuración inicial de la página
 st.set_page_config(
     page_title="Simulador de Láser y Espejos", page_icon="💡", layout="wide"
 )
 
 st.title("💡 Simulador de Trayectoria de Láser (Vista Superior)")
 st.markdown(
-    "Ajusta la posición del láser, coloca y configura hasta 5 espejos para guiar el rayo láser hacia el objetivo."
+    "Ajusta la posición del láser, coloca y configura hasta 5 espejos para"
+    " guiar el rayo hacia el objetivo."
 )
 
 # --- PANEL DE CONTROL LATERAL ---
 st.sidebar.header("🎛️ Controles del Sistema")
 
-# 1. Configuración del Campo
+# 1. Dimensiones del Campo
 st.sidebar.subheader("Dimensiones del Área")
 max_x = st.sidebar.slider("Límite Eje X (Ancho)", 10.0, 50.0, 20.0, 1.0)
 max_y = st.sidebar.slider("Límite Eje Y (Largo)", 10.0, 50.0, 20.0, 1.0)
@@ -65,8 +66,6 @@ def get_ray_path(
   path_x = [l_x]
   path_y = [0.0]
 
-  # Convertir ángulo inicial del láser a vector director
-  # 90 grados es hacia el frente (Y positivo)
   rad = np.radians(l_start_deg)
   dir_x = np.cos(rad)
   dir_y = np.sin(rad)
@@ -80,8 +79,7 @@ def get_ray_path(
     hit_mirror_idx = -1
     normal_vector = None
 
-    # 1. Comprobar intersección con las paredes del campo
-    # Paredes laterales: x = -b_x y x = b_x
+    # Paredes laterales
     if dir_x > 0:
       t_wall = (b_x - curr_x) / dir_x
       if 0 < t_wall < closest_t:
@@ -95,7 +93,7 @@ def get_ray_path(
         next_x, next_y = -b_x, curr_y + dir_x * t_wall
         normal_vector = (1, 0)
 
-    # Pared superior: y = b_y
+    # Pared superior
     if dir_y > 0:
       t_wall = (b_y - curr_y) / dir_y
       if 0 < t_wall < closest_t:
@@ -103,21 +101,16 @@ def get_ray_path(
         next_x, next_y = curr_x + dir_x * t_wall, b_y
         normal_vector = (0, -1)
 
-    # 2. Comprobar intersección con espejos (simulados como segmentos cortos de línea)
+    # Espejos
     mirror_length = 2.0
     for idx, m in enumerate(mirrors_list):
       m_rad = np.radians(m["angle"])
-      # Vector tangente del espejo
       m_dx = np.cos(m_rad) * (mirror_length / 2)
       m_dy = np.sin(m_rad) * (mirror_length / 2)
 
       x1, y1 = m["x"] - m_dx, m["y"] - m_dy
       x2, y2 = m["x"] + m_dx, m["y"] + m_dy
 
-      # Intersección de dos líneas (rayo vs espejo)
-      # Rayo: P = curr + t*D
-      # Espejo: Q = P1 + u*(P2-P1)
-      # Resolver sistema 2x2
       det = dir_x * (y1 - y2) - dir_y * (x1 - x2)
       if abs(det) > 1e-6:
         t = ((x1 - curr_x) * (y1 - y2) - (y1 - curr_y) * (x1 - x2)) / det
@@ -128,17 +121,14 @@ def get_ray_path(
           next_x, next_y = curr_x + dir_x * t, curr_y + dir_y * t
           hit_mirror_idx = idx
 
-          # Normal del espejo perpendicular al vector tangente
           nx, ny = -m_dy, m_dx
           length_n = np.hypot(nx, ny)
           nx, ny = nx / length_n, ny / length_n
-          # Asegurar que la normal apunte hacia donde viene el rayo
           if nx * dir_x + ny * dir_y > 0:
             nx, ny = -nx, -ny
           normal_vector = (nx, ny)
 
-    # 3. Comprobar si el rayo atraviesa/intercepta el objetivo en este tramo
-    # Distancia del centro del objetivo al segmento de recta (curr -> next)
+    # Comprobación del objetivo
     v_vec = np.array([next_x - curr_x, next_y - curr_y])
     w_vec = np.array([t_x - curr_x, t_y - curr_y])
     v_len_sq = np.dot(v_vec, v_vec)
@@ -156,7 +146,6 @@ def get_ray_path(
 
       if proj_dist <= t_rad:
         hit_target = True
-        # Cortar la trayectoria en el objetivo para mayor realismo
         path_x.append(t_x)
         path_y.append(t_y)
         break
@@ -167,7 +156,6 @@ def get_ray_path(
     if hit_target or hit_mirror_idx == -1 or normal_vector is None:
       break
 
-    # Reflejar el rayo: R = D - 2(D·N)N
     d_vec = np.array([dir_x, dir_y])
     n_vec = np.array(normal_vector)
     r_vec = d_vec - 2 * np.dot(d_vec, n_vec) * n_vec
@@ -177,7 +165,6 @@ def get_ray_path(
   return path_x, path_y, hit_target
 
 
-# Ejecutar cálculo de trayectoria
 path_x, path_y, success = get_ray_path(
     laser_x,
     laser_angle_deg,
@@ -193,15 +180,15 @@ if success:
   st.success("🎯 ¡Impacto exitoso! El láser llegó al objetivo.")
 else:
   st.warning(
-    "⚠️ El láser no alcanzó el objetivo. ¡Sigue ajustando los espejos y"
-    " ángulos!"
+    "⚠️ El láser no alcanzó el objetivo. ¡Sigue ajustando los ángulos y"
+    " posiciones!"
   )
 
 
-# --- DIBUJAR GRÁFICA CON PLOTLY ---
+# --- CONSTRUCCIÓN DE LA GRÁFICA CON PLOTLY ---
 fig = go.Figure()
 
-# 1. Dibujar Trayectoria del Láser
+# 1. Trayectoria
 fig.add_trace(
     go.Scatter(
         x=path_x,
@@ -213,7 +200,7 @@ fig.add_trace(
     )
 )
 
-# 2. Dibujar Láser (Origen)
+# 2. Láser
 fig.add_trace(
     go.Scatter(
         x=[laser_x],
@@ -226,7 +213,7 @@ fig.add_trace(
     )
 )
 
-# 3. Dibujar Objetivo
+# 3. Objetivo
 theta = np.linspace(0, 2 * np.pi, 100)
 t_circle_x = target_x + target_radius * np.cos(theta)
 t_circle_y = target_y + target_radius * np.sin(theta)
@@ -242,17 +229,8 @@ fig.add_trace(
         line=dict(color="green", width=2),
     )
 )
-fig.add_trace(
-    go.Scatter(
-        x=[target_x],
-        y=[target_y],
-        mode="markers",
-        showlegend=False,
-        marker=dict(color="green", size=8),
-    )
-)
 
-# 4. Dibujar Espejos
+# 4. Espejos
 for idx, m in enumerate(mirrors):
   m_rad = np.radians(m["angle"])
   m_len = 2.0
@@ -272,7 +250,7 @@ for idx, m in enumerate(mirrors):
       )
   )
 
-# Ajustes de la gráfica optimizados para evitar errores de validación en Plotly
+# Propiedades del layout aplanadas (compatibles con cualquier versión de Plotly)
 fig.update_layout(
     xaxis_title="Eje X (Ancho)",
     xaxis_range=[-max_x / 2 - 1, max_x / 2 + 1],
@@ -285,3 +263,6 @@ fig.update_layout(
     template="plotly_dark",
     legend=dict(x=0, y=1),
 )
+
+# Renderizar la gráfica en Streamlit de forma segura
+st.plotly_chart(fig, use_container_width=True)
