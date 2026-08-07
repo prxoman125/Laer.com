@@ -7,7 +7,7 @@ st.set_page_config(
     page_title="Simulador de Láser y Espejos", page_icon="💡", layout="wide"
 )
 
-st.title("💡 Simulador de Trayectoria Láser con Rebotes Físicos Reales")
+st.title("💡 Simulador de Trayectoria Láser con Rebotes Reales")
 st.markdown(
     "Visualiza los rebotes exactos de la luz usando la ley de reflexión"
     " vectorial ($\\theta_i = \\theta_r$)."
@@ -59,7 +59,7 @@ for i in range(num_mirrors):
   mirrors.append({"x": mx, "y": my, "angle": m_ang})
 
 
-# --- MOTOR DE FÍSICA Y REBOTES ROBUSTO ---
+# --- MOTOR DE FÍSICA Y REBOTES PRECISO ---
 def get_ray_path(
     l_x, l_start_deg, mirrors_list, t_x, t_y, t_rad, b_x, b_y, max_bounces=15
 ):
@@ -74,74 +74,86 @@ def get_ray_path(
   hit_target = False
   bounce_points = []
 
-  bound_x = b_x  # Límite absoluto en X (positivo y negativo)
-  bound_y = b_y  # Límite absoluto en Y
+  bound_x = b_x
+  bound_y = b_y
 
   for _ in range(max_bounces):
     closest_t = float("inf")
     next_x, next_y = curr_x + dir_x * 1000, curr_y + dir_y * 1000
     normal_vector = None
 
-    # 1. Intersección con las paredes de la caja
-    # Pared derecha (x = bound_x)
+    # 1. Comprobar colisión con las paredes de la caja
     if dir_x > 0:
       t_w = (bound_x - curr_x) / dir_x
-      if 1e-4 < t_w < closest_t:
+      if 1e-3 < t_w < closest_t:
         closest_t = t_w
         next_x = bound_x
         next_y = curr_y + dir_x * t_w
         normal_vector = (-1, 0)
-    # Pared izquierda (x = -bound_x)
     elif dir_x < 0:
       t_w = (-bound_x - curr_x) / dir_x
-      if 1e-4 < t_w < closest_t:
+      if 1e-3 < t_w < closest_t:
         closest_t = t_w
         next_x = -bound_x
         next_y = curr_y + dir_x * t_w
         normal_vector = (1, 0)
 
-    # Pared superior (y = bound_y)
     if dir_y > 0:
       t_w = (bound_y - curr_y) / dir_y
-      if 1e-4 < t_w < closest_t:
+      if 1e-3 < t_w < closest_t:
         closest_t = t_w
         next_x = curr_x + dir_x * t_w
         next_y = bound_y
         normal_vector = (0, -1)
 
-    # 2. Intersección con los espejos (segmentos de línea)
-    mirror_length = 3.0
+    # 2. Comprobar colisión estricta con cada espejo (Segmento de línea)
+    mirror_length = 4.0
     for idx, m in enumerate(mirrors_list):
       m_rad = np.radians(m["angle"])
+      # Vector director del espejo
       m_dx = np.cos(m_rad) * (mirror_length / 2)
       m_dy = np.sin(m_rad) * (mirror_length / 2)
 
       x1, y1 = m["x"] - m_dx, m["y"] - m_dy
       x2, y2 = m["x"] + m_dx, m["y"] + m_dy
 
-      # Resolver intersección rayo-segmento mediante determinantes
-      det = dir_x * (y1 - y2) - dir_y * (x1 - x2)
-      if abs(det) > 1e-6:
-        t = ((x1 - curr_x) * (y1 - y2) - (y1 - curr_y) * (x1 - x2)) / det
-        u = ((x1 - curr_x) * dir_y - (y1 - curr_y) * dir_x) / det
+      # Sistema de ecuaciones paramétricas: Rayo vs Segmento de Espejo
+      # Rayo: P = P0 + t * D
+      # Espejo: Q = S1 + u * (S2 - S1)
+      v1x = curr_x - x1
+      v1y = curr_y - y1
+      v2x = x2 - x1
+      v2y = y2 - y1
+      v3x = -dir_y
+      v3y = dir_x
 
-        # t > 1e-4 evita que se autodetecte el punto de salida del espejo anterior
-        if 1e-4 < t < closest_t and 0.0 <= u <= 1.0:
-          closest_t = t
-          next_x = curr_x + dir_x * t
-          next_y = curr_y + dir_y * t
+      dot = v2x * v3x + v2y * v3y
+      if abs(dot) < 1e-6:
+        continue
 
-          # Vector normal al espejo
-          nx, ny = -m_dy, m_dx
-          length_n = np.hypot(nx, ny)
+      t = (v2x * v1y - v2y * v1x) / dot
+      u = (v1x * v3x + v1y * v3y) / dot
+
+      # t > 1e-3 previene que el láser detecte el punto del que acaba de rebotar
+      # u entre 0 y 1 asegura que golpee estrictamente dentro de la barra del espejo
+      if 1e-3 < t < closest_t and 0.0 <= u <= 1.0:
+        closest_t = t
+        next_x = curr_x + dir_x * t
+        next_y = curr_y + dir_y * t
+
+        # Vector normal perpendicular a la superficie del espejo
+        nx, ny = -v2y, v2x
+        length_n = np.hypot(nx, ny)
+        if length_n > 0:
           nx, ny = nx / length_n, ny / length_n
 
-          # Orientar la normal en contra del rayo incidente
-          if nx * dir_x + ny * dir_y > 0:
-            nx, ny = -nx, -ny
-          normal_vector = (nx, ny)
+        # Asegurar que la normal apunte en sentido opuesto al rayo incidente
+        if nx * dir_x + ny * dir_y > 0:
+          nx, ny = -nx, -ny
 
-    # 3. Verificar si el objetivo interseca este tramo del rayo
+        normal_vector = (nx, ny)
+
+    # 3. Comprobar si el objetivo interseca esta sección del rayo
     v_vec = np.array([next_x - curr_x, next_y - curr_y])
     w_vec = np.array([t_x - curr_x, t_y - curr_y])
     v_len_sq = np.dot(v_vec, v_vec)
@@ -157,7 +169,6 @@ def get_ray_path(
         pb_y = curr_y + b_val * v_vec[1]
         proj_dist = np.hypot(t_x - pb_x, t_y - pb_y)
 
-      # Si el láser pasa por el radio del objetivo antes de chocar con el obstáculo
       if proj_dist <= t_rad:
         hit_target = True
         path_x.append(t_x)
@@ -170,10 +181,10 @@ def get_ray_path(
     if normal_vector is None:
       break
 
-    # Registrar el punto exacto de rebote
+    # Registrar rebote real
     bounce_points.append((next_x, next_y))
 
-    # Calcular la reflexión real usando la ley de Snell vectorial: R = D - 2(D · N) * N
+    # Ley de reflexión óptica exacta: R = D - 2(D · N) * N
     d_vec = np.array([dir_x, dir_y])
     n_vec = np.array(normal_vector)
     r_vec = d_vec - 2 * np.dot(d_vec, n_vec) * n_vec
@@ -183,7 +194,7 @@ def get_ray_path(
   return path_x, path_y, hit_target, bounce_points
 
 
-# Ejecutar la simulación con la lógica optimizada
+# Ejecutar la simulación con la física corregida
 path_x, path_y, success, bounces = get_ray_path(
     laser_x,
     laser_angle_deg,
@@ -223,7 +234,7 @@ fig.add_trace(
         mode="lines+markers",
         name="Rayo Láser",
         line=dict(color="#00FF66", width=3),
-        marker=dict(size=4, color="#00FF66"),
+        marker=dict(size=5, color="#00FF66"),
     )
 )
 
@@ -237,7 +248,7 @@ if bounces:
           y=by_vals,
           mode="markers+text",
           name="Puntos de Rebote",
-          marker=dict(size=12, color="yellow", symbol="diamond"),
+          marker=dict(size=14, color="yellow", symbol="diamond"),
           text=[f"Rebote {i+1}" for i in range(len(bounces))],
           textposition="top center",
           textfont=dict(color="yellow"),
@@ -287,7 +298,7 @@ fig.add_trace(
 # 5. Espejos configurables individualmente
 for idx, m in enumerate(mirrors):
   m_rad = np.radians(m["angle"])
-  m_len = 3.0
+  m_len = 4.0
   mx1 = m["x"] - np.cos(m_rad) * (m_len / 2)
   my1 = m["y"] - np.sin(m_rad) * (m_len / 2)
   mx2 = m["x"] + np.cos(m_rad) * (m_len / 2)
