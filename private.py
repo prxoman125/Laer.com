@@ -4,13 +4,15 @@ import streamlit as st
 
 # Configuración inicial de la página
 st.set_page_config(
-    page_title="Simulador de Láser y Espejos", page_icon="💡", layout="wide"
+    page_title="Simulador de Óptica Geométrica - Láser",
+    page_icon="💡",
+    layout="wide",
 )
 
-st.title("💡 Simulador de Trayectoria de Láser (Vista Superior)")
+st.title("💡 Simulador de Óptica con Ley de Reflexión Real")
 st.markdown(
-    "Ajusta la posición del láser, coloca y configura hasta 5 espejos para"
-    " guiar el rayo hacia el objetivo."
+    "Simulación exacta basada en la ley de la reflexión ($\theta_i = \theta_r$)"
+    " con vectores normales y cálculo de rebotes vectoriales."
 )
 
 # --- PANEL DE CONTROL LATERAL ---
@@ -48,10 +50,10 @@ mirrors = []
 for i in range(num_mirrors):
   st.sidebar.markdown(f"**Espejo {i+1}**")
   mx = st.sidebar.slider(
-      f"Pos X #{i+1}", -max_x / 2, max_x / 2, float(i * 3 - 2), 0.5, key=f"mx_{i}"
+      f"Pos X #{i+1}", -max_x / 2, max_x / 2, float(i * 4 - 2), 0.5, key=f"mx_{i}"
   )
   my = st.sidebar.slider(
-      f"Pos Y #{i+1}", 0.0, max_y, float(i * 4 + 5), 0.5, key=f"my_{i}"
+      f"Pos Y #{i+1}", 0.0, max_y, float(i * 4 + 4), 0.5, key=f"my_{i}"
   )
   m_ang = st.sidebar.slider(
       f"Ángulo #{i+1} (grados)", 0, 180, 45, 1, key=f"mang_{i}"
@@ -59,7 +61,7 @@ for i in range(num_mirrors):
   mirrors.append({"x": mx, "y": my, "angle": m_ang})
 
 
-# --- LÓGICA FÍSICA DEL RAYO LÁSER ---
+# --- MOTOR FÍSICO DE REFLEXIÓN REAL ---
 def get_ray_path(
     l_x, l_start_deg, mirrors_list, t_x, t_y, t_rad, b_x, b_y, max_bounces=10
 ):
@@ -79,7 +81,7 @@ def get_ray_path(
     hit_mirror_idx = -1
     normal_vector = None
 
-    # Paredes laterales
+    # 1. Comprobación con fronteras (paredes de la caja)
     if dir_x > 0:
       t_wall = (b_x - curr_x) / dir_x
       if 0 < t_wall < closest_t:
@@ -93,7 +95,6 @@ def get_ray_path(
         next_x, next_y = -b_x, curr_y + dir_x * t_wall
         normal_vector = (1, 0)
 
-    # Pared superior
     if dir_y > 0:
       t_wall = (b_y - curr_y) / dir_y
       if 0 < t_wall < closest_t:
@@ -101,16 +102,18 @@ def get_ray_path(
         next_x, next_y = curr_x + dir_x * t_wall, b_y
         normal_vector = (0, -1)
 
-    # Espejos
-    mirror_length = 2.0
+    # 2. Comprobación con los espejos (segmentos físicos orientados por ángulo)
+    mirror_length = 3.0
     for idx, m in enumerate(mirrors_list):
       m_rad = np.radians(m["angle"])
+      # Vector tangente del espejo en el plano XY
       m_dx = np.cos(m_rad) * (mirror_length / 2)
       m_dy = np.sin(m_rad) * (mirror_length / 2)
 
       x1, y1 = m["x"] - m_dx, m["y"] - m_dy
       x2, y2 = m["x"] + m_dx, m["y"] + m_dy
 
+      # Intersección Rayo-Segmento (Cramer / 2D Line Intersection)
       det = dir_x * (y1 - y2) - dir_y * (x1 - x2)
       if abs(det) > 1e-6:
         t = ((x1 - curr_x) * (y1 - y2) - (y1 - curr_y) * (x1 - x2)) / det
@@ -121,14 +124,18 @@ def get_ray_path(
           next_x, next_y = curr_x + dir_x * t, curr_y + dir_y * t
           hit_mirror_idx = idx
 
+          # Cálculo físico riguroso de la Normal al Espejo:
+          # Si la tangente es (m_dx, m_dy), las normales candidatas son (-m_dy, m_dx) o (m_dy, -m_dx)
           nx, ny = -m_dy, m_dx
           length_n = np.hypot(nx, ny)
           nx, ny = nx / length_n, ny / length_n
+
+          # Orientar la normal en sentido opuesto al rayo incidente (producto escalar negativo)
           if nx * dir_x + ny * dir_y > 0:
             nx, ny = -nx, -ny
           normal_vector = (nx, ny)
 
-    # Comprobación del objetivo
+    # 3. Verificación de intercepción con el objetivo en este segmento
     v_vec = np.array([next_x - curr_x, next_y - curr_y])
     w_vec = np.array([t_x - curr_x, t_y - curr_y])
     v_len_sq = np.dot(v_vec, v_vec)
@@ -156,6 +163,7 @@ def get_ray_path(
     if hit_target or hit_mirror_idx == -1 or normal_vector is None:
       break
 
+    # 4. Ley de Reflexión Vectorial Exacta: R = D - 2(D · N) * N
     d_vec = np.array([dir_x, dir_y])
     n_vec = np.array(normal_vector)
     r_vec = d_vec - 2 * np.dot(d_vec, n_vec) * n_vec
@@ -165,6 +173,7 @@ def get_ray_path(
   return path_x, path_y, hit_target
 
 
+# Calcular la trayectoria con la física actualizada
 path_x, path_y, success = get_ray_path(
     laser_x,
     laser_angle_deg,
@@ -177,37 +186,37 @@ path_x, path_y, success = get_ray_path(
 )
 
 if success:
-  st.success("🎯 ¡Impacto exitoso! El láser llegó al objetivo.")
+  st.success("🎯 ¡Impacto exitoso con el objetivo!")
 else:
   st.warning(
-    "⚠️ El láser no alcanzó el objetivo. ¡Sigue ajustando los ángulos y"
-    " posiciones!"
+    "⚠️ El láser no alcanzó el objetivo. Mueve los ángulos de los espejos para"
+    " desviar el haz."
   )
 
 
-# --- CONSTRUCCIÓN DE LA GRÁFICA CON PLOTLY ---
+# --- RENDERIZADO GRÁFICO CON PLOTLY ---
 fig = go.Figure()
 
-# 1. Trayectoria
+# 1. Trayectoria del rayo láser
 fig.add_trace(
     go.Scatter(
         x=path_x,
         y=path_y,
         mode="lines+markers",
         name="Rayo Láser",
-        line=dict(color="red", width=3),
-        marker=dict(size=6),
+        line=dict(color="#FF0055", width=3),
+        marker=dict(size=5, color="#FF5588"),
     )
 )
 
-# 2. Láser
+# 2. Posición del Láser
 fig.add_trace(
     go.Scatter(
         x=[laser_x],
         y=[0],
         mode="markers+text",
-        name="Láser",
-        marker=dict(color="magenta", size=14, symbol="triangle-up"),
+        name="Emisor Láser",
+        marker=dict(color="#00FFFF", size=16, symbol="triangle-up"),
         text=["Láser"],
         textposition="bottom center",
     )
@@ -225,15 +234,15 @@ fig.add_trace(
         mode="lines",
         name="Objetivo",
         fill="toself",
-        fillcolor="rgba(0, 255, 0, 0.3)",
-        line=dict(color="green", width=2),
+        fillcolor="rgba(0, 255, 100, 0.2)",
+        line=dict(color="#00FF66", width=2),
     )
 )
 
-# 4. Espejos
+# 4. Espejos con su orientación física real
 for idx, m in enumerate(mirrors):
   m_rad = np.radians(m["angle"])
-  m_len = 2.0
+  m_len = 3.0
   mx1 = m["x"] - np.cos(m_rad) * (m_len / 2)
   my1 = m["y"] - np.sin(m_rad) * (m_len / 2)
   mx2 = m["x"] + np.cos(m_rad) * (m_len / 2)
@@ -245,24 +254,23 @@ for idx, m in enumerate(mirrors):
           y=[my1, my2],
           mode="lines+markers",
           name=f"Espejo {idx+1}",
-          line=dict(color="cyan", width=6),
-          marker=dict(size=4),
+          line=dict(color="#00E5FF", width=7),
+          marker=dict(size=4, color="white"),
       )
   )
 
-# Propiedades del layout aplanadas (compatibles con cualquier versión de Plotly)
+# Ajustes de diseño de la interfaz visual
 fig.update_layout(
-    xaxis_title="Eje X (Ancho)",
+    xaxis_title="Eje X (Lateral)",
     xaxis_range=[-max_x / 2 - 1, max_x / 2 + 1],
     xaxis_zeroline=True,
-    yaxis_title="Eje Y (Largo)",
+    yaxis_title="Eje Y (Fondo)",
     yaxis_range=[-1, max_y + 1],
     yaxis_scaleanchor="x",
-    width=800,
+    width=850,
     height=600,
     template="plotly_dark",
     legend=dict(x=0, y=1),
 )
 
-# Renderizar la gráfica en Streamlit de forma segura
 st.plotly_chart(fig, use_container_width=True)
